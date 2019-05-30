@@ -57,7 +57,7 @@ void send_response(struct Request *request){
 
     printf("\n> OPENING FIFO %s \n", toClientFIFO);
     //apro la FIFO
-    int clientFIFO = open(toClientFIFO, O_WRONLY);
+    int clientFIFO = open(toClientFIFO, O_WRONLY | S_IWUSR);
     if (clientFIFO == -1){
         err_exit("OPEN FAILED\n");
     }
@@ -72,7 +72,7 @@ void send_response(struct Request *request){
     //la scrivo nella FIFO in uscita
     printf("> SENDING A RESPONSE\n");
     if(write(clientFIFO, &response, sizeof(struct Response)) != sizeof(struct Response)){
-        err_exit("WRITE FAILED");
+        printf("ERROR IN SENDING THE RESPONSE");
     }
 
     // chiudo la FIFOCLIENT
@@ -90,8 +90,6 @@ void safe_unlink(){
 
 int main (int argc, char *argv[]) {
     safe_unlink();
-    //struct Request request = { "Michael", "Salva", (pid_t)223};
-    //printf("%ld\n", key_generator(&request));
 
     // Creo la FIFO
     printf("> CREATING FIFO ... \n");
@@ -116,7 +114,7 @@ int main (int argc, char *argv[]) {
     //------REQUEST RESPONSE--------//
     while(1){
     printf("\n> WAITING A CLIENT .. \n");
-    serverFIFO = open(toServerFIFO, O_RDONLY);
+    serverFIFO = open(toServerFIFO, O_RDONLY | S_IRUSR);
     if(serverFIFO == -1){
         err_exit("Open READ-ONLY failed");
     }
@@ -124,15 +122,19 @@ int main (int argc, char *argv[]) {
     struct Request request;
     int bR = -1;
     printf("\n> WAITING A REQUEST ... \n");
-    do{
 
-        //Leggo la Richiesta
-        bR = read(serverFIFO, &request, sizeof(struct Request));
-        if(bR == -1){
-            printf("THE FIFO HAS SOME PROBLEMS.\n");
-        }
-    } while( bR != sizeof(struct Request));
-    send_response(&request);
+    // Controllo se è presente una risposta
+    bR = read(serverFIFO, &request, sizeof(struct Request));
+    if(bR == -1){
+        printf("THE FIFO HAS SOME PROBLEMS.\n");
+        // METTI A 0 LA CHIAVE E RENDILA INVALIDA
+    } else if(bR != sizeof(struct Request)){
+        printf("THE REQUEST SEEMS INCOMPLETE\n");
+        // METTI A 0 LA CHIAVE E RENDILA INVALIDA
+    } else {
+        send_response(&request);
+    }
+
 
     }
     //------------------------------//

@@ -12,7 +12,7 @@
 void print_request(struct Request request){
   printf("USER ID: %s\n", request.user_id);
   printf("SERVICE : %s\n", request.service);
-  printf("PID: %d", request.pid);
+  printf("PID: %d\n", request.pid);
 }
 
 
@@ -54,7 +54,7 @@ int main (int argc, char *argv[]) {
     printf("%s created.", toClientFIFO);
 
     // Richiesta al server
-    int serverFIFO = open(toServerFIFO, O_WRONLY);
+    int serverFIFO = open(toServerFIFO, O_WRONLY | S_IWUSR);
     if( serverFIFO == -1){
         err_exit("Operazione open fallita");
     }
@@ -65,7 +65,7 @@ int main (int argc, char *argv[]) {
     }
 
     // Apro la FIFO in entrata e mi preparo a ricevere
-    int clientFIFO = open(toClientFIFO, O_RDONLY);
+    int clientFIFO = open(toClientFIFO, O_RDONLY | S_IRUSR);
     if( clientFIFO == -1 ){
         err_exit("Operazione open in entrata fallita");
     }
@@ -73,15 +73,15 @@ int main (int argc, char *argv[]) {
      // Da fixxare ed utilizzare un semfaroro
     struct Response response;
     int bR = -1 ;
-    do{
     bR = read(clientFIFO, &response, sizeof(struct Response));
     if ( bR == -1){
-        err_exit("");
+        err_exit("Errore nella ricezione della risposta, riprovare.");
+    } else if ( bR != sizeof(struct Response)){
+        err_exit("Errore nella ricezione della risposta, riprovare.");
     }
-  } while(bR != sizeof(struct Response));
 
-
-    printf("\nCHIAVE: %ld\n\n", response.key);
+    printf("\nCHIAVE: %ld", response.key);
+    printf("\n");
 
     //Chiudo le FIFO
     if(close(serverFIFO) != 0 || close(clientFIFO) != 0){
