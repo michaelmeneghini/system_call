@@ -1,55 +1,122 @@
 #include <stdlib.h>
 #include <stdio.h>
-#include "../inc/request_response.h"
-#include "../../err_exit.c"
+
+#include "../inc/miscellaneous.h"
+#include "../../semaphore.c"
+
+#include <sys/time.h>
 #include <sys/types.h>
+#include <sys/sem.h>
+
 #include <fcntl.h>
 #include <time.h>
 #include <signal.h>
 #include <string.h>
 
-char* toServerFIFO = "/FIFOSERVER";       // Client -> FIFOSERVER (Request)  -> Server
-char* baseClientFIFO = "/FIFOCLIENT.";
+#define SHM_MAX_ENTRIES 10
 
-int serverFIFO;
+// VARIABILE CHE RAPPRESENTA IL SEMAFORO
+int semid;
+int shmid;
+struct Entry* shared_memory;
+
+
+void print_shm(){
+
+    struct Entry *current_shm = shared_memory;
+    printf("\n------------------------------------------------------------------------------------------\n");
+    int i;
+    for(i=0; i<SHM_MAX_ENTRIES; i++){
+        printf("USER: %s  KEY: %ld   TIMESTAMP: %ld\n", current_shm[i].user_id, current_shm[i].key, current_shm[i].timestamp );
+        printf("\n------------------------------------------------------------------------------------------\n");
+    }
+
+}
+
 //TODO:
 // Key hanlder
 
 // Funzione che gestisce l'arrivo del segnale SIGTERM
-void quit( int sig ){
+void server_handler( int sig ){
 
-  printf("THANK YOU, SEE YOU NEXT TIME.");
+  printf("\nTHANK YOU, SEE YOU NEXT TIME.\n");
 
-  //Chiudo la fifo
-  if(close(serverFIFO) == -1){
-      err_exit("CLOSE FAILED");
-  }
   //La rimuovo
   if(unlink(toServerFIFO) == -1){
-      err_exit("UNLINK FAILED");
+      printf("UNLINK FAILED");
   }
+
+  //Detatch memoria condivisa
+  if(shmdt(shared_memory) == -1){
+      printf("ERROR DURING SHARED MEMORY DETATCH");
+  }
+  printf("> DETATCH COMPLETED\n");
+
+  //elimino il segmento di memoria condivisa
+  if(shmctl(shmid, IPC_RMID, NULL) == -1){
+      printf("ERROR DURING SHARED MEMORY ELIMINATION");
+  }
+  printf("> SHARED MEMORY DELETED\n");
+
+  // Rimuovo il semaforo
+  if( semctl(semid, 1, IPC_RMID, NULL) == -1){
+      printf("ERROR DURING SEMAPHORE ELIMINATION");
+  }
+  printf("> SEMAPHORE REMOVED\n");
+
+  // TODO:
+  // MANDA SIGTERM A KEY MANAGER
+
   exit(0);
 }
 
 
 // Funzione che genera la chiave di accesso ai servizi a partire dalla richiesta
+// Per evitare possibili duplicati della chiave utilizzo timestamp in millisecondi
 // Formato della chiave:
 //  TIMESTAMP_RICHIESTA|CODICE_SERVIZIO (0 - stampa, 1 - salva, 2- invia)
-// ES: 15589958550 (timestamp: 1558995855 - servizio: 0 (stampa))
+// ES: 15589958555670 (timestamp: 1558995855567 - servizio: 0 (stampa))
 long key_generator(struct Request *request){
-    long timestamp = (long) time(NULL)*10;
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    long timestamp = (long) tv.tv_usec;
+    timestamp /= 1000;
+    timestamp += (tv.tv_sec * 1000);
 
     if( strcmp(request->service, "Stampa") == 0){
-        return timestamp + 0;
+        return (timestamp*10) + 0;
     } else if (strcmp(request->service, "Salva") == 0){
-        return timestamp + 1;
+        return (timestamp*10) + 1;
     } else {
-        return timestamp + 2;
+        return (timestamp*10) + 2;
     };
 
 }
 
-void send_response(struct Request *request){
+void shm_update(struct Request *request, struct Response response, int saved_entries){
+
+    // Preparo la entry da scrivere in memoria
+    struct Entry entry;
+    sprintf(entry.user_id, "%s", request->user_id);
+    entry.key = response.key;
+    entry.timestamp = (long) time(NULL);
+
+    //
+    struct Entry *current_shm = shared_memory;
+
+    // Scrivo quando trovo la prima entry vuota / non valida
+    int i;
+    for( i=0; i< saved_entries; i++){
+        if( strcmp( current_shm[i].user_id, "") == 0 || current_shm[i].key == 0 || current_shm[i].timestamp == 0 || current_shm[i].user_id == NULL){
+            current_shm[i] = entry;
+            break;
+        }
+        printf("%s", current_shm[i].user_id);
+    }
+
+}
+
+void send_response(struct Request *request, int entries){
 
     //path per la risposta
     char toClientFIFO[20];
@@ -73,12 +140,19 @@ void send_response(struct Request *request){
     printf("> SENDING A RESPONSE\n");
     if(write(clientFIFO, &response, sizeof(struct Response)) != sizeof(struct Response)){
         printf("ERROR IN SENDING THE RESPONSE");
-    }
 
+    }
     // chiudo la FIFOCLIENT
     if (close(clientFIFO) != 0){
         err_exit("CLOSE FAILED ");
     }
+
+    //P -> blocco
+    //semOp(semid, 0, 1);
+    shm_update( request, response, entries);
+    //print_shm();
+    //V -> sblocco
+  //  semOp(semid, 0, -1);
 
 }
 
@@ -90,6 +164,37 @@ void safe_unlink(){
 
 int main (int argc, char *argv[]) {
     safe_unlink();
+
+    //--INIT SEMAFORO E MEMORIA CONDIVISA--//
+    // sem_key e shm_key sono definite in sempahore.c
+    semid = semget( sem_key, 1, IPC_CREAT |  S_IRUSR | S_IWUSR );
+    if(semid == -1){
+        err_exit("ERROR IN SEMAPHORE CREATION");
+    }
+
+    // Inizializzo il semaforo a 0
+    union semun arg;
+    arg.val = 0;
+    if( semctl(semid, 0, SETVAL, arg) == -1){
+        err_exit("ERROR IN SEMAPHORE INITIALIZATION");
+    }
+
+    // Creo il segmento di memoria convidisa
+    size_t size = sizeof( struct Entry) * SHM_MAX_ENTRIES;
+    shmid = shmget( shm_key, size, IPC_CREAT | S_IRUSR | S_IWUSR);
+    if(shmid == -1){
+        err_exit("ERROR IN SHARED MEMORY CREATION");
+    }
+
+    // Effetto l'attachment di questo processo alla memoria condivisa
+    shared_memory = (struct Entry*) shmat(shmid, NULL, 0);
+    if ((void *) shared_memory == (void *)-1){
+        err_exit("ERROR IN SHARED MEMORY ATTACHMENT");
+    } else {
+      printf("shared_memory created\n");
+    }
+
+    //-------------------------------------//
 
     // Creo la FIFO
     printf("> CREATING FIFO ... \n");
@@ -106,34 +211,43 @@ int main (int argc, char *argv[]) {
           err_exit("Errore durante la gestione dei segnali");
     }
     // Setto il signal handlers
-    if( signal(SIGTERM, quit) == SIG_ERR){
+    if( signal(SIGTERM, server_handler) == SIG_ERR){
         err_exit("Errore nel gestore dei segnali");
     }
     //-------------------------------//
 
+    //Variabile necessaria per la scrittura in memoria CONDIVISA
+    int entries = 0;
+
     //------REQUEST RESPONSE--------//
     while(1){
-    printf("\n> WAITING A CLIENT .. \n");
-    serverFIFO = open(toServerFIFO, O_RDONLY | S_IRUSR);
-    if(serverFIFO == -1){
-        err_exit("Open READ-ONLY failed");
-    }
+        printf("\n> WAITING A CLIENT .. \n");
+        int serverFIFO = open(toServerFIFO, O_RDONLY | S_IRUSR);
+        if(serverFIFO == -1){
+            err_exit("Open READ-ONLY failed");
+        }
 
-    struct Request request;
-    int bR = -1;
-    printf("\n> WAITING A REQUEST ... \n");
+        struct Request request;
+        int bR = -1;
+        printf("\n> WAITING A REQUEST ... \n");
 
-    // Controllo se è presente una risposta
-    bR = read(serverFIFO, &request, sizeof(struct Request));
-    if(bR == -1){
-        printf("THE FIFO HAS SOME PROBLEMS.\n");
-        // METTI A 0 LA CHIAVE E RENDILA INVALIDA
-    } else if(bR != sizeof(struct Request)){
-        printf("THE REQUEST SEEMS INCOMPLETE\n");
-        // METTI A 0 LA CHIAVE E RENDILA INVALIDA
-    } else {
-        send_response(&request);
-    }
+
+        // Controllo se è presente una risposta
+        bR = read(serverFIFO, &request, sizeof(struct Request));
+        if(bR == -1){
+            printf("THE FIFO HAS SOME PROBLEMS.\n");
+            // METTI A 0 LA CHIAVE E RENDILA INVALIDA
+        } else if(bR != sizeof(struct Request)){
+            printf("THE REQUEST SEEMS INCOMPLETE\n");
+            // METTI A 0 LA CHIAVE E RENDILA INVALIDA
+        } else {
+          //Chiudo la fifo
+          if(close(serverFIFO) == -1){
+              err_exit("CLOSE FAILED");
+          }
+            entries++;
+            send_response(&request, entries);
+        }
 
 
     }

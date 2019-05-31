@@ -1,7 +1,9 @@
 #include <stdlib.h>
 #include <stdio.h>
-#include "../inc/request_response.h"
+
 #include "../../err_exit.c"
+#include "../inc/miscellaneous.h"
+
 #include <sys/stat.h>
 #include <unistd.h>
 #include <fcntl.h>
@@ -15,9 +17,6 @@ void print_request(struct Request request){
   printf("PID: %d\n", request.pid);
 }
 
-
-char* toServerFIFO = "/FIFOSERVER";       // Client -> FIFOSERVER (Request)  -> Server
-char* baseClientFIFO = "/FIFOCLIENT.";    // Server -> FIFOCLIENT (Response) -> Client
 
 int main (int argc, char *argv[]) {
 
@@ -70,7 +69,7 @@ int main (int argc, char *argv[]) {
         err_exit("Operazione open in entrata fallita");
     }
 
-     // Da fixxare ed utilizzare un semfaroro
+
     struct Response response;
     int bR = -1 ;
     bR = read(clientFIFO, &response, sizeof(struct Response));
@@ -80,13 +79,13 @@ int main (int argc, char *argv[]) {
         err_exit("Errore nella ricezione della risposta, riprovare.");
     }
 
-    printf("\nCHIAVE: %ld", response.key);
-    printf("\n");
-
     //Chiudo le FIFO
     if(close(serverFIFO) != 0 || close(clientFIFO) != 0){
         err_exit("Errore durante la chiusura delle FIFO");
     }
+
+    printf("\nCHIAVE: %ld", response.key);
+    printf("\n");
 
     //Rimuovo la FIFO da fs
     if (unlink(toClientFIFO) != 0){
