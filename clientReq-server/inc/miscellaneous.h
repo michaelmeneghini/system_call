@@ -1,7 +1,7 @@
 #include "../inc/request_response.h"
 
-char* toServerFIFO = "/FIFOSERVER";       // Client -> FIFOSERVER (Request)  -> Server
-char* baseClientFIFO = "/FIFOCLIENT.";
+char* toServerFIFO = "./FIFOSERVER";       // Client -> FIFOSERVER (Request)  -> Server
+char* baseClientFIFO = "./FIFOCLIENT.";
 
 // struttura che verrà salvata nella memoria condivisa
 

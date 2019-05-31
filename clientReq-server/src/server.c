@@ -7,6 +7,7 @@
 #include <sys/time.h>
 #include <sys/types.h>
 #include <sys/sem.h>
+#include <sys/shm.h>
 
 #include <fcntl.h>
 #include <time.h>
@@ -26,11 +27,11 @@ struct Entry* shared_memory;
 void print_shm(){
 
     struct Entry *current_shm = shared_memory;
-    printf("\n------------------------------------------------------------------------------------------\n");
+    printf("\n------------------------------------------------------------------------------------\n");
     int i;
     for(i=0; i<SHM_MAX_ENTRIES; i++){
         printf("USER: %s  KEY: %ld   TIMESTAMP: %ld\n", current_shm[i].user_id, current_shm[i].key, current_shm[i].timestamp );
-        printf("\n------------------------------------------------------------------------------------------\n");
+        printf("\n-------------------------------------------------------------------------------------\n");
     }
 
 }
@@ -51,7 +52,7 @@ void server_handler( int sig ){
   //Detatch memoria condivisa
   if(shmdt(shared_memory) == -1){
       //printf("ERROR DURING SHARED MEMORY DETATCH");
-      perror("ERROR DURING SHARED MEMORY DETATCH\n");
+      perror("ERROR DURING SHARED MEMORY DETATCH");
   }
   printf("> DETATCH COMPLETED\n");
 
@@ -96,24 +97,29 @@ long key_generator(struct Request *request){
 
 }
 
-void shm_update(struct Request *request, struct Response response, int saved_entries){
+void shm_update(struct Request *request, struct Response response){
 
     // Preparo la entry da scrivere in memoria
     struct Entry entry;
     sprintf(entry.user_id, "%s", request->user_id);
     entry.key = response.key;
     entry.timestamp = (long) time(NULL);
+    
+    struct Entry* current_shm = shared_memory;
 
-    //
-    struct Entry *current_shm = shared_memory;
-
-    // Scrivo quando trovo la prima entry vuota / non valida
-    current_shm[saved_entries-1] = entry;
-
+    //Scrivo nella prima cella vuota che trovo
+    //Controllo che il timestamp sia inizializzato a 0
+    int i;
+    for(i=0; i<SHM_MAX_ENTRIES; i++){
+        if( current_shm[i].timestamp == 0){
+                current_shm[i] = entry;
+                break;
+        }
+    }
 
 }
 
-void send_response(struct Request *request, int entries){
+void send_response(struct Request *request){
 
     //path per la risposta
     char toClientFIFO[20];
@@ -145,11 +151,11 @@ void send_response(struct Request *request, int entries){
     }
 
     //P -> blocco
-    //semOp(semid, 0, 1);
-    //shm_update( request, response, entries);
-    //print_shm();
+    semOp(semid, 0, 1);
+    shm_update( request, response);
+    print_shm();
     //V -> sblocco
-  //  semOp(semid, 0, -1);
+    semOp(semid, 0, -1);
 
 }
 
@@ -211,9 +217,6 @@ int main (int argc, char *argv[]) {
     }
     //-------------------------------//
 
-    //Variabile necessaria per la scrittura in memoria CONDIVISA
-    int entries = 0;
-
     //------REQUEST RESPONSE--------//
     while(1){
         printf("\n> WAITING A CLIENT .. \n");
@@ -237,14 +240,12 @@ int main (int argc, char *argv[]) {
             // METTI A 0 LA CHIAVE E RENDILA INVALIDA
         } else {
           //Chiudo la fifo
-          if(close(serverFIFO) == -1){
-              err_exit("CLOSE FAILED");
-          }
-            entries++;
-            send_response(&request, entries);
+            send_response(&request);
         }
 
-
+        if(close(serverFIFO) == -1){
+              err_exit("CLOSE FAILED");
+        }
     }
     //------------------------------//
 }
