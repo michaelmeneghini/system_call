@@ -13,6 +13,8 @@
 #include <signal.h>
 #include <string.h>
 
+#include <errno.h>
+
 #define SHM_MAX_ENTRIES 10
 
 // VARIABILE CHE RAPPRESENTA IL SEMAFORO
@@ -48,7 +50,8 @@ void server_handler( int sig ){
 
   //Detatch memoria condivisa
   if(shmdt(shared_memory) == -1){
-      printf("ERROR DURING SHARED MEMORY DETATCH");
+      //printf("ERROR DURING SHARED MEMORY DETATCH");
+      perror("ERROR DURING SHARED MEMORY DETATCH\n");
   }
   printf("> DETATCH COMPLETED\n");
 
@@ -105,14 +108,8 @@ void shm_update(struct Request *request, struct Response response, int saved_ent
     struct Entry *current_shm = shared_memory;
 
     // Scrivo quando trovo la prima entry vuota / non valida
-    int i;
-    for( i=0; i< saved_entries; i++){
-        if( strcmp( current_shm[i].user_id, "") == 0 || current_shm[i].key == 0 || current_shm[i].timestamp == 0 || current_shm[i].user_id == NULL){
-            current_shm[i] = entry;
-            break;
-        }
-        printf("%s", current_shm[i].user_id);
-    }
+    current_shm[saved_entries-1] = entry;
+
 
 }
 
@@ -149,7 +146,7 @@ void send_response(struct Request *request, int entries){
 
     //P -> blocco
     //semOp(semid, 0, 1);
-    shm_update( request, response, entries);
+    //shm_update( request, response, entries);
     //print_shm();
     //V -> sblocco
   //  semOp(semid, 0, -1);
@@ -180,19 +177,17 @@ int main (int argc, char *argv[]) {
     }
 
     // Creo il segmento di memoria convidisa
-    size_t size = sizeof( struct Entry) * SHM_MAX_ENTRIES;
-    shmid = shmget( shm_key, size, IPC_CREAT | S_IRUSR | S_IWUSR);
-    if(shmid == -1){
-        err_exit("ERROR IN SHARED MEMORY CREATION");
+    shmid = shmget( shm_key, sizeof( struct Entry ) * SHM_MAX_ENTRIES, IPC_CREAT | S_IRUSR | S_IWUSR);
+    if ( shmid == -1 ){
+        printf("ERROR IN SHARED MEMORY CREATION\n");
     }
 
     // Effetto l'attachment di questo processo alla memoria condivisa
-    shared_memory = (struct Entry*) shmat(shmid, NULL, 0);
-    if ((void *) shared_memory == (void *)-1){
-        err_exit("ERROR IN SHARED MEMORY ATTACHMENT");
-    } else {
-      printf("shared_memory created\n");
+    shared_memory = (struct Entry *) (unsigned long) shmat( shmid, NULL, 0);
+    if (shared_memory == (void *) -1){
+        printf("ERROR DURING SHARED MEMORY ATTACHMENT\n");
     }
+
 
     //-------------------------------------//
 
