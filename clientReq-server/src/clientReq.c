@@ -1,13 +1,11 @@
 #include <stdlib.h>
 #include <stdio.h>
 
-#include "../../err_exit.c"
-#include "../inc/miscellaneous.h"
+#include "../../miscellaneous.h"
 
 #include <sys/stat.h>
 #include <unistd.h>
 #include <fcntl.h>
-#include <string.h>
 
 // TEST FUNCTIONS -> to remove after
 

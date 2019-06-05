@@ -1,8 +1,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 
-#include "../inc/miscellaneous.h"
-#include "../../semaphore.c"
+#include "../../miscellaneous.h"
 
 #include <sys/time.h>
 #include <sys/types.h>
@@ -12,11 +11,6 @@
 #include <fcntl.h>
 #include <time.h>
 #include <signal.h>
-#include <string.h>
-
-#include <errno.h>
-
-#define SHM_MAX_ENTRIES 10
 
 // VARIABILE CHE RAPPRESENTA IL SEMAFORO
 int semid;
@@ -24,23 +18,29 @@ int shmid;
 struct Entry* shared_memory;
 
 
-void print_shm(){
-
+void print_shm(char * color){
+    printf("%s ------------------------------------------------------------- %s\n", color, ANSI_COLOR_RESET );
     struct Entry *current_shm = shared_memory;
-    printf("\n------------------------------------------------------------------------------------\n");
     int i;
     for(i=0; i<SHM_MAX_ENTRIES; i++){
-        printf("USER: %s  KEY: %ld   TIMESTAMP: %ld\n", current_shm[i].user_id, current_shm[i].key, current_shm[i].timestamp );
-        printf("\n-------------------------------------------------------------------------------------\n");
+        printf("%s USER: %s | KEY: %ld | TIMESTAMP: %ld %s\n",color, current_shm[i].user_id, current_shm[i].key, current_shm[i].timestamp, ANSI_COLOR_RESET );
     }
-
+    printf("%s ------------------------------------------------------------- %s\n", color, ANSI_COLOR_RESET );
 }
 
-//TODO:
-// Key hanlder
+// Funzione che gestisce l'arrivo del segnale SIGTERM per il processo figlio key manager
+void key_manager_handler(int sig){
+    printf(" %s \n\n[KEY MANAGER] terminated. \n\n %s", ANSI_COLOR_YELLOW, ANSI_COLOR_RESET);
+    exit(0);
+}
 
-// Funzione che gestisce l'arrivo del segnale SIGTERM
+// Funzione che gestisce l'arrivo del segnale SIGTERM per il processo server
 void server_handler( int sig ){
+
+  // Mando un sigterm a key manager
+  if(signal(SIGTERM, key_manager_handler) == SIG_ERR){
+      printf("ERROR IN KEY MANAGER EXIT");
+  }
 
   printf("\nTHANK YOU, SEE YOU NEXT TIME.\n");
 
@@ -51,25 +51,24 @@ void server_handler( int sig ){
 
   //Detatch memoria condivisa
   if(shmdt(shared_memory) == -1){
-      //printf("ERROR DURING SHARED MEMORY DETATCH");
-      perror("ERROR DURING SHARED MEMORY DETATCH");
+      printf("ERROR DURING SHARED MEMORY DETATCH");
+  } else {
+      printf("> DETATCH COMPLETED\n");
   }
-  printf("> DETATCH COMPLETED\n");
 
   //elimino il segmento di memoria condivisa
   if(shmctl(shmid, IPC_RMID, NULL) == -1){
       printf("ERROR DURING SHARED MEMORY ELIMINATION");
+  } else {
+      printf("> SHARED MEMORY DELETED\n");
   }
-  printf("> SHARED MEMORY DELETED\n");
 
   // Rimuovo il semaforo
   if( semctl(semid, 1, IPC_RMID, NULL) == -1){
       printf("ERROR DURING SEMAPHORE ELIMINATION");
+  } else {
+      printf("> SEMAPHORE REMOVED\n");
   }
-  printf("> SEMAPHORE REMOVED\n");
-
-  // TODO:
-  // MANDA SIGTERM A KEY MANAGER
 
   exit(0);
 }
@@ -104,7 +103,7 @@ void shm_update(struct Request *request, struct Response response){
     sprintf(entry.user_id, "%s", request->user_id);
     entry.key = response.key;
     entry.timestamp = (long) time(NULL);
-    
+
     struct Entry* current_shm = shared_memory;
 
     //Scrivo nella prima cella vuota che trovo
@@ -153,20 +152,18 @@ void send_response(struct Request *request){
     //P -> blocco
     semOp(semid, 0, 1);
     shm_update( request, response);
-    print_shm();
+    print_shm(ANSI_COLOR_GREEN  );
     //V -> sblocco
     semOp(semid, 0, -1);
 
-}
-
-void safe_unlink(){
-    unlink(toServerFIFO);
-    printf("FIFO UNLINKED %s\n", toServerFIFO);
+    printf("Sem:%d getpid:%d getncnt:%d getzcnt:%d\n",
+    semctl(semid, 0, GETPID, NULL),
+    semctl(semid, 0, GETNCNT, NULL),
+    semctl(semid, 0, GETZCNT, NULL));
 
 }
 
 int main (int argc, char *argv[]) {
-    safe_unlink();
 
     //--INIT SEMAFORO E MEMORIA CONDIVISA--//
     // sem_key e shm_key sono definite in sempahore.c
@@ -216,6 +213,51 @@ int main (int argc, char *argv[]) {
         err_exit("Errore nel gestore dei segnali");
     }
     //-------------------------------//
+
+    //---------KEY MANAGER-----------//
+
+    pid_t km = fork();
+
+    if(km == -1){
+        err_exit("ERROR DURING KEY MANAGER INITIALIZATION");
+    }
+
+    // KEY MANAGERù
+    if(km == 0){
+
+        printf("%s \n[KEY MANAGER]\n %s", ANSI_COLOR_YELLOW, ANSI_COLOR_RESET);
+
+        // Setto un signal handler esclusivamente per Key Manager
+        if (signal(SIGTERM, key_manager_handler) == SIG_ERR){
+            err_exit(" Error in signal management");
+        }
+
+        while(1){
+            sleep(30);
+            //P --> blocco
+            semOp(semid, 0, 1);
+            // COntrollo sulla memoria condivisa
+            // Se trovo Entry non valide, le "azzero" e le rendo disponibili ad essere riempite da nuove richieste
+            struct Entry* current_shm = shared_memory;
+            int i;
+            for(i=0; i<SHM_MAX_ENTRIES; i++){
+                // Se l'entry è vuota non ha senso far qualcosa
+                if( current_shm[i].timestamp != 0){
+                    // Se la differenza di timestamp dell'istante corrente e il timestamp dell'entry >= 300 elimino l'entry
+                    // 300 secondi -> 5 minuti
+                    if( (long)time(NULL) - current_shm[i].timestamp >= 300){
+                        sprintf(current_shm[i].user_id, "%s", "");
+                        current_shm[i].key = 0;
+                        current_shm[i].timestamp = 0;
+                        // Stampo la nuova situazione della memoria
+                        print_shm(ANSI_COLOR_YELLOW);
+                    }
+                }
+            }
+            //V --> sblocco
+            semOp(semid, 0, -1);
+        }
+    }
 
     //------REQUEST RESPONSE--------//
     while(1){
