@@ -150,16 +150,13 @@ void send_response(struct Request *request){
     }
 
     //P -> blocco
-    semOp(semid, 0, 1);
+    semOp(semid, 0, -1);
     shm_update( request, response);
     print_shm(ANSI_COLOR_GREEN  );
     //V -> sblocco
-    semOp(semid, 0, -1);
+    semOp(semid, 0, 1);
 
-    printf("Sem:%d getpid:%d getncnt:%d getzcnt:%d\n",
-    semctl(semid, 0, GETPID, NULL),
-    semctl(semid, 0, GETNCNT, NULL),
-    semctl(semid, 0, GETZCNT, NULL));
+
 
 }
 
@@ -174,7 +171,7 @@ int main (int argc, char *argv[]) {
 
     // Inizializzo il semaforo a 0
     union semun arg;
-    arg.val = 0;
+    arg.val = 1;
     if( semctl(semid, 0, SETVAL, arg) == -1){
         err_exit("ERROR IN SEMAPHORE INITIALIZATION");
     }
@@ -235,7 +232,7 @@ int main (int argc, char *argv[]) {
         while(1){
             sleep(30);
             //P --> blocco
-            semOp(semid, 0, 1);
+            semOp(semid, 0, -1);
             // COntrollo sulla memoria condivisa
             // Se trovo Entry non valide, le "azzero" e le rendo disponibili ad essere riempite da nuove richieste
             struct Entry* current_shm = shared_memory;
@@ -255,7 +252,7 @@ int main (int argc, char *argv[]) {
                 }
             }
             //V --> sblocco
-            semOp(semid, 0, -1);
+            semOp(semid, 0, 1);
         }
     }
 
@@ -276,10 +273,8 @@ int main (int argc, char *argv[]) {
         bR = read(serverFIFO, &request, sizeof(struct Request));
         if(bR == -1){
             printf("THE FIFO HAS SOME PROBLEMS.\n");
-            // METTI A 0 LA CHIAVE E RENDILA INVALIDA
         } else if(bR != sizeof(struct Request)){
             printf("THE REQUEST SEEMS INCOMPLETE\n");
-            // METTI A 0 LA CHIAVE E RENDILA INVALIDA
         } else {
           //Chiudo la fifo
             send_response(&request);

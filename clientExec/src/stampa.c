@@ -6,7 +6,7 @@
 int main (int argc, char *argv[]) {
 
     printf("\n --------------------\n");
-    printf (" |SERVIZIO DI STAMPA|", );
+    printf (" |SERVIZIO DI STAMPA|");
     printf("\n --------------------\n\n");
 
     int i;

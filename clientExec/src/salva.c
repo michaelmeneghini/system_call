@@ -31,6 +31,7 @@ int main (int argc, char *argv[]) {
   char buffer[1000];
   int i;
   size_t size = 0;
+  // +1 per lo spazio
   for( i=1; i< argc; i++){
       size += strlen(argv[i])+1;
   }

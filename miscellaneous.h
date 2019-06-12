@@ -14,8 +14,8 @@
 #define ANSI_COLOR_CYAN    "\x1b[36m"
 #define ANSI_COLOR_RESET   "\x1b[0m"
 
-char* toServerFIFO = "/FIFOSERVER";       // Client -> FIFOSERVER (Request)  -> Server
-char* baseClientFIFO = "/FIFOCLIENT.";
+char* toServerFIFO = "/tmp/FIFOSERVER";       // Client -> FIFOSERVER (Request)  -> Server
+char* baseClientFIFO = "/tmp/FIFOCLIENT.";
 
 // struttura che verrà salvata nella memoria condivisa
 

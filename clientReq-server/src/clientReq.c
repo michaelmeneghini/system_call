@@ -9,6 +9,8 @@
 
 // TEST FUNCTIONS -> to remove after
 
+
+
 void print_request(struct Request request){
   printf("USER ID: %s\n", request.user_id);
   printf("SERVICE : %s\n", request.service);

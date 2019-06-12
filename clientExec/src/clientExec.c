@@ -40,7 +40,7 @@ int main (int argc, char *argv[]) {
 
     struct Entry* current_shm = shared_memory;
     //P --> blocco
-    semOp(semid, 0, 1);
+    semOp(semid, 0, -1);
 
     // cerco la COPPIA user_id / key nella memoria condivisa
     int i;
@@ -53,7 +53,7 @@ int main (int argc, char *argv[]) {
 
               // sblocco il semaforo qui visto che ho trovato una corrispondenza in memoria condivisa
               //so che con l'exec il codice verrà cambiato e non avrò altre opportunità di sbloccarlo
-              semOp(semid, 0, -1);
+              semOp(semid, 0, 1);
 
               // stessa cosa per il detatch della memoria
               if(shmdt(shared_memory) == -1){
@@ -82,7 +82,7 @@ int main (int argc, char *argv[]) {
                     execv("./salva", service_arguments);
                     break;
                 case 2:
-                    printf("Esecuzione servizio Invia.");
+                    execv("./invia", service_arguments);
                     break;
               }
 
@@ -90,7 +90,7 @@ int main (int argc, char *argv[]) {
     }
 
     //se non trovo corrisponenze, sblocco qui il semaforo
-    semOp(semid, 0 , -1);
+    semOp(semid, 0 , 1);
 
     printf("\nCombinazione USER_ID - KEY incorretta o assente fra le richieste, riprovare.\n" );
 
