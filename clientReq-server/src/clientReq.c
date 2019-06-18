@@ -7,9 +7,6 @@
 #include <unistd.h>
 #include <fcntl.h>
 
-// TEST FUNCTIONS -> to remove after
-
-
 
 void print_request(struct Request request){
   printf("USER ID: %s\n", request.user_id);
@@ -28,13 +25,9 @@ int main (int argc, char *argv[]) {
     scanf(" %s", request.user_id);
     char temp_service[50];
 
-    // L'utente deve inserire correttamente il nome del servizio!
-    do{
-        printf("Servizio desiderato: ");
-        scanf(" %s", temp_service);
-    } while(strcmp(temp_service, "Stampa") != 0 &&
-            strcmp(temp_service, "Salva")  != 0 &&
-            strcmp(temp_service, "Invia")  != 0);
+    // Chiedo all'utente quale servizio voglia
+    printf("Servizio desiderato: ");
+    scanf(" %s", temp_service);
     sprintf(request.service, "%s", temp_service);
     request.pid = getpid();
     print_request(request);
@@ -84,8 +77,12 @@ int main (int argc, char *argv[]) {
         err_exit("Errore durante la chiusura delle FIFO");
     }
 
-    printf("\nCHIAVE: %ld", response.key);
-    printf("\n");
+    if( response.key != 0){
+        printf("\nCHIAVE: %ld", response.key);
+        printf("\n");
+    } else {
+        printf("\nSERVIZIO RICHIESTO NON VALIDO\n");
+    }
 
     //Rimuovo la FIFO da fs
     if (unlink(toClientFIFO) != 0){

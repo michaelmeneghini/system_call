@@ -49,10 +49,10 @@ int main (int argc, char *argv[]) {
    		printf("\n --------------------\n\n");
    }
    // rimuovo la coda 
-   if ( msgctl(msgqid, IPC_RMID, NULL) == -1){
-   		err_exit(" msgctl FAILED!");
-   		printf("\n --------------------\n\n");
-   }
+   //if ( msgctl(msgqid, IPC_RMID, NULL) == -1){
+   //		err_exit(" msgctl FAILED!");
+   //		printf("\n --------------------\n\n");
+   //}
 
    printf("\n --------------------\n\n");
 

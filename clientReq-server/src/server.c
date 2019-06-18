@@ -86,12 +86,15 @@ long key_generator(struct Request *request){
     timestamp /= 1000;
     timestamp += (tv.tv_sec * 1000);
 
+    // se la stringa che ottengo non è uno dei servizi allora ritorno una chiave non valida
     if( strcmp(request->service, "Stampa") == 0){
         return (timestamp*10) + 0;
     } else if (strcmp(request->service, "Salva") == 0){
         return (timestamp*10) + 1;
-    } else {
+    } else  if (strcmp(request->service, "Invia") ==  0){
         return (timestamp*10) + 2;
+    } else  {
+        return 0;
     };
 
 }
@@ -138,6 +141,7 @@ void send_response(struct Request *request){
     struct Response response;
     response.key = key_generator(request);
 
+
     //la scrivo nella FIFO in uscita
     printf("> SENDING A RESPONSE\n");
     if(write(clientFIFO, &response, sizeof(struct Response)) != sizeof(struct Response)){
@@ -147,6 +151,10 @@ void send_response(struct Request *request){
     // chiudo la FIFOCLIENT
     if (close(clientFIFO) != 0){
         err_exit("CLOSE FAILED ");
+    }
+
+    if(response.key == 0){
+        return;
     }
 
     //P -> blocco
@@ -271,18 +279,21 @@ int main (int argc, char *argv[]) {
 
         // Controllo se è presente una risposta
         bR = read(serverFIFO, &request, sizeof(struct Request));
-        if(bR == -1){
-            printf("THE FIFO HAS SOME PROBLEMS.\n");
-        } else if(bR != sizeof(struct Request)){
+    do{
+            //printf("THE FIFO HAS SOME PROBLEMS.\n");
+         if(bR != sizeof(struct Request)){
             printf("THE REQUEST SEEMS INCOMPLETE\n");
         } else {
           //Chiudo la fifo
             send_response(&request);
         }
 
-        if(close(serverFIFO) == -1){
+    }while(bR == -1);
+
+
+    if(close(serverFIFO) == -1){
               err_exit("CLOSE FAILED");
-        }
+    }
     }
     //------------------------------//
 }
